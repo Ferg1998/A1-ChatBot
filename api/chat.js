@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -24,11 +26,13 @@ If off-topic, redirect back to A1 info. Keep answers under 120 words.`;
       input: [{ role: "user", content: message }]
     });
 
+    // The OpenAI Node SDK returns `output_text` for quick access
     const reply = r.output_text ?? "Sorry, I didn’t catch that.";
+
     res.setHeader("Cache-Control", "no-store");
     res.status(200).json({ reply });
   } catch (e) {
-    console.error(e);
+    console.error("API error:", e);
     res.status(500).json({ error: "AI request failed" });
   }
 }
