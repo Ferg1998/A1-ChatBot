@@ -15,16 +15,20 @@ async function appendToSheet(values) {
       credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
+
     const sheets = google.sheets({ version: "v4", auth });
+
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
       range: "Sheet1!A:F",
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
     });
-    console.log("✅ Lead saved to Google Sheet");
+
+    console.log("✅ Lead saved to Google Sheet:", values);
   } catch (err) {
-    console.error("❌ Google Sheets error:", err);
+    console.error("❌ Google Sheets error:", err.message, err.stack);
+    throw err;
   }
 }
 
@@ -45,9 +49,11 @@ async function sendLeadEmail(name, email, phone, message) {
         <p><b>Message:</b> ${message || "-"}</p>
       `,
     });
-    console.log("✅ Lead email sent");
+
+    console.log("✅ Lead email sent to:", process.env.EMAIL_TO);
   } catch (err) {
-    console.error("❌ Email error:", err);
+    console.error("❌ Email error:", err.message, err.stack);
+    throw err;
   }
 }
 
@@ -89,6 +95,8 @@ export default async function handler(req, res) {
   const { message, sessionId = "default" } = req.body || {};
   if (!message) return res.status(400).json({ error: "Missing 'message'" });
 
+  console.log("💬 Incoming message:", message);
+
   // ✅ Initialize memory
   if (!conversationHistory[sessionId]) conversationHistory[sessionId] = [];
   conversationHistory[sessionId].push({ role: "user", content: message });
@@ -115,11 +123,17 @@ export default async function handler(req, res) {
       message,
     ];
 
-    // Save to Google Sheets
-    await appendToSheet(values);
+    try {
+      await appendToSheet(values);
+    } catch (e) {
+      console.error("⚠️ Failed to save lead to Google Sheets");
+    }
 
-    // Send email
-    await sendLeadEmail(contact.name, contact.email, contact.phone, message);
+    try {
+      await sendLeadEmail(contact.name, contact.email, contact.phone, message);
+    } catch (e) {
+      console.error("⚠️ Failed to send lead email");
+    }
 
     const reply = "✅ Got it! Thanks — our team will reach out shortly. 🎉";
     conversationHistory[sessionId].push({ role: "assistant", content: reply });
@@ -166,11 +180,14 @@ Always end with: "➡️ Text 905-912-2582 to reserve.\n\nDid I answer your ques
         { role: "user", content: message },
       ],
     });
+
     const reply = completion.choices[0].message.content;
+    console.log("🤖 OpenAI reply:", reply);
+
     conversationHistory[sessionId].push({ role: "assistant", content: reply });
     return res.status(200).json({ reply });
   } catch (err) {
-    console.error("❌ OpenAI API error:", err);
+    console.error("❌ OpenAI API error:", err.message, err.stack);
     return res.status(500).json({ error: "AI request failed" });
   }
 }
