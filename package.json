@@ -2,14 +2,10 @@
   "name": "a1-chatbot",
   "version": "1.0.0",
   "type": "module",
-  "main": "api/chat.js",
-  "scripts": {
-    "start": "node api/chat.js"
-  },
+  "main": "chat.js",
   "dependencies": {
-    "openai": "^4.59.0"
-  },
-  "engines": {
-    "node": "22.x"
+    "openai": "^4.0.0",
+    "googleapis": "^105.0.0",
+    "resend": "^2.0.0"
   }
 }
