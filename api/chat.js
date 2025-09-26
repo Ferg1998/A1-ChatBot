@@ -1,7 +1,7 @@
 // api/chat.js
 import OpenAI from "openai";
 import A1_SCHEDULE from "./schedule.js";
-import FAQ from "./faq.js";
+import FAQ, { debugFAQMatch } from "./faq.js";
 
 // ✅ Helper: format full weekly schedule
 function formatFullSchedule(schedule) {
@@ -14,17 +14,6 @@ function formatFullSchedule(schedule) {
     });
   }
   return reply;
-}
-
-// ✅ Helper: check for FAQ match
-function findFAQAnswer(message) {
-  const lowerMsg = message.toLowerCase();
-  for (const item of FAQ) {
-    if (item.keywords.some(kw => lowerMsg.includes(kw))) {
-      return item.answer;
-    }
-  }
-  return null;
 }
 
 export default async function handler(req, res) {
@@ -48,10 +37,10 @@ export default async function handler(req, res) {
     return res.status(200).json({ reply: formatFullSchedule(A1_SCHEDULE) });
   }
 
-  // ✅ Check FAQ first
-  const faqAnswer = findFAQAnswer(message);
+  // ✅ Check FAQ first (with debug logging)
+  const faqAnswer = debugFAQMatch(message);
   if (faqAnswer) {
-    console.log("❓ FAQ matched:", faqAnswer);
+    console.log("❓ FAQ response returned");
     return res.status(200).json({ reply: faqAnswer });
   }
 
