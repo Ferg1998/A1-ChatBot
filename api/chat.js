@@ -28,10 +28,15 @@ FAQ:
 ${FAQ.map(f => `Q: ${f.q}\nA: ${f.answer}`).join("\n\n")}
 
 Rules:
-- Always answer directly from the schedule/FAQ above.
-- If a client asks "What’s on [day]?", use the SCHEDULE to list exact classes with times.
-- Keep answers short (under 120 words), friendly, and specific.
-- If info isn’t in the schedule/FAQ, say “Please contact us at 905-912-2582 for details.”
+- When asked "What’s on [day]?", reply ONLY with the exact classes from the schedule.
+- Format schedule answers like this:
+  [Day] Classes:
+  • [Class Name] — [Time] ([Length])
+  • [Class Name] — [Time] ([Length])
+- Never invent classes or times.
+- Always use the FAQ answers for pricing, booking, policies, etc.
+- If info isn’t in the schedule/FAQ, reply: “Please text/call 905-912-2582 for details.”
+- Keep answers short, under 120 words, friendly, and specific.
 `;
     const r = await client.responses.create({
       model: "gpt-4o-mini",
