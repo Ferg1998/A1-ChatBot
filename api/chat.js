@@ -41,7 +41,8 @@ export default async function handler(req, res) {
   const faqAnswer = debugFAQMatch(message);
   if (faqAnswer) {
     console.log("❓ FAQ response returned");
-    return res.status(200).json({ reply: faqAnswer });
+    const reply = `${faqAnswer}\n\nDid I answer your question?`;
+    return res.status(200).json({ reply });
   }
 
   // ✅ Otherwise: Ask OpenAI, but inject rules + data
@@ -64,6 +65,7 @@ Rules:
 - Always check FAQ first for pricing, booking, cancellations, etc.
 - Never invent info. If not in schedule/FAQ, reply: “Please text/call 905-912-2582 for details.”
 - Keep answers under 120 words, friendly, and specific.
+- If replying from FAQ or schedule, you may follow with: "Did I answer your question?"
 `;
 
   try {
