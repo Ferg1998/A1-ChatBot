@@ -1,11 +1,59 @@
 // api/chat.js
 import OpenAI from "openai";
+import { google } from "googleapis";
+import Resend from "resend";
 import A1_SCHEDULE from "./schedule.js";
 import FAQ, { debugFAQMatch } from "./faq.js";
 
+// Memory for conversations
+let conversationHistory = {};
+
+// ✅ Setup Google Sheets
+async function appendToSheet(values) {
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+    const sheets = google.sheets({ version: "v4", auth });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Sheet1!A:F",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [values] },
+    });
+    console.log("✅ Lead saved to Google Sheet");
+  } catch (err) {
+    console.error("❌ Google Sheets error:", err);
+  }
+}
+
+// ✅ Setup Email
+const resend = new Resend(process.env.EMAIL_API_KEY);
+
+async function sendLeadEmail(name, email, phone, message) {
+  try {
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: process.env.EMAIL_TO,
+      subject: "🔥 New Lead from A1 Chatbot",
+      html: `
+        <h2>New Lead Captured</h2>
+        <p><b>Name:</b> ${name}</p>
+        <p><b>Email:</b> ${email}</p>
+        <p><b>Phone:</b> ${phone}</p>
+        <p><b>Message:</b> ${message}</p>
+      `,
+    });
+    console.log("✅ Lead email sent");
+  } catch (err) {
+    console.error("❌ Email error:", err);
+  }
+}
+
 // ✅ Helper: format full weekly schedule
 function formatFullSchedule(schedule) {
-  let reply = "Weekly Class Schedule:\n";
+  let reply = "📅 Weekly Class Schedule:\n";
   for (const [day, classes] of Object.entries(schedule)) {
     const dayName = day.charAt(0).toUpperCase() + day.slice(1);
     reply += `\n${dayName}:\n`;
@@ -13,87 +61,85 @@ function formatFullSchedule(schedule) {
       reply += `• ${c.name} — ${c.time} (${c.length})\n`;
     });
   }
+  reply += "\n➡️ Text 905-912-2582 to reserve your spot.\n\nDid I answer your question? (Yes/No)";
   return reply;
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    console.error("❌ Invalid request method:", req.method);
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { message } = req.body || {};
-  if (!message) {
-    console.error("⚠️ Missing 'message' in request body:", req.body);
-    return res.status(400).json({ error: "Missing 'message'" });
-  }
+  const { message, sessionId = "default" } = req.body || {};
+  if (!message) return res.status(400).json({ error: "Missing 'message'" });
 
-  // ✅ Catch "weekly schedule" requests
-  if (
-    /schedule/i.test(message) &&
-    !/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(message)
-  ) {
-    console.log("📅 Weekly schedule requested");
-    return res.status(200).json({ reply: formatFullSchedule(A1_SCHEDULE) });
-  }
+  // ✅ Initialize memory
+  if (!conversationHistory[sessionId]) conversationHistory[sessionId] = [];
+  conversationHistory[sessionId].push({ role: "user", content: message });
 
-  // ✅ Check FAQ first (with debug logging)
-  const faqAnswer = debugFAQMatch(message);
-  if (faqAnswer) {
-    console.log("❓ FAQ response returned");
-    const reply = `${faqAnswer}\n\nDid I answer your question?`;
+  // ✅ Lead capture detection
+  if (/sign up|free trial|join|membership|personal training/i.test(message)) {
+    console.log("📝 Lead intent detected");
+    const reply = "Awesome! Can I get your **name, email, and phone number** so we can reserve your spot?";
+    conversationHistory[sessionId].push({ role: "assistant", content: reply });
     return res.status(200).json({ reply });
   }
 
-  // ✅ Otherwise: Ask OpenAI, but inject rules + data
+  // ✅ If user provides details (basic regex check)
+  if (/\S+@\S+/.test(message) && /\d{10}/.test(message)) {
+    console.log("📩 Lead details detected:", message);
+    const [namePart, email, phone] = message.split(/[, ]+/); // crude parse
+    const name = namePart || "Unknown";
+    const msg = "Lead from chatbot";
+
+    // Save to Google Sheets
+    await appendToSheet([new Date().toISOString(), name, email, phone, msg, "Chatbot"]);
+
+    // Send email
+    await sendLeadEmail(name, email, phone, msg);
+
+    const reply = "✅ Got it! Thanks — our team will reach out shortly. 🎉";
+    conversationHistory[sessionId].push({ role: "assistant", content: reply });
+    return res.status(200).json({ reply });
+  }
+
+  // ✅ Weekly schedule
+  if (/schedule/i.test(message)) {
+    const reply = formatFullSchedule(A1_SCHEDULE);
+    conversationHistory[sessionId].push({ role: "assistant", content: reply });
+    return res.status(200).json({ reply });
+  }
+
+  // ✅ FAQ check
+  const faqAnswer = debugFAQMatch(message);
+  if (faqAnswer) {
+    const reply = `${faqAnswer}\n\n➡️ Text 905-912-2582 to reserve.\n\nDid I answer your question? (Yes/No)`;
+    conversationHistory[sessionId].push({ role: "assistant", content: reply });
+    return res.status(200).json({ reply });
+  }
+
+  // ✅ AI fallback
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
   const instructions = `
-You are A1 Performance Club's assistant. Use ONLY the data provided.
-
-SCHEDULE:
-${JSON.stringify(A1_SCHEDULE, null, 2)}
-
-FAQ:
-${FAQ.map(f => `Q: ${f.q}\nA: ${f.answer}`).join("\n\n")}
-
-Rules:
-- If user asks "What’s on [day]?", list classes for that day like:
-  [Day] Classes:
-  • [Class] — [Time] ([Length])
-- If they ask about "schedule" with no day, reply with the full weekly schedule above.
-- Always check FAQ first for pricing, booking, cancellations, etc.
-- Never invent info. If not in schedule/FAQ, reply: “Please text/call 905-912-2582 for details.”
-- Keep answers under 120 words, friendly, and specific.
-- If replying from FAQ or schedule, you may follow with: "Did I answer your question?"
+You are A1 Performance Club's Assistant.
+Use ONLY the provided schedule and FAQ.
+Never invent info.
+Keep answers <120 words.
+Always end with: "➡️ Text 905-912-2582 to reserve.\n\nDid I answer your question? (Yes/No)".
 `;
 
   try {
-    console.log("🤖 Sending request to OpenAI with message:", message);
-
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: instructions },
-        { role: "user", content: message }
-      ]
+        ...conversationHistory[sessionId],
+        { role: "user", content: message },
+      ],
     });
-
     const reply = completion.choices[0].message.content;
-    console.log("✅ OpenAI reply:", reply);
-
+    conversationHistory[sessionId].push({ role: "assistant", content: reply });
     return res.status(200).json({ reply });
-  } catch (error) {
-    console.error("❌ OpenAI API error:", {
-      message: error.message,
-      stack: error.stack,
-      status: error.status,
-      response: error.response?.data
-    });
-
-    return res.status(500).json({
-      error: "AI request failed",
-      details: error.message
-    });
+  } catch (err) {
+    console.error("❌ OpenAI API error:", err);
+    return res.status(500).json({ error: "AI request failed" });
   }
 }
