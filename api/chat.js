@@ -1,4 +1,15 @@
 import OpenAI from "openai";
+function formatFullSchedule(schedule) {
+  let reply = "Weekly Class Schedule:\n";
+  for (const [day, classes] of Object.entries(schedule)) {
+    const dayName = day.charAt(0).toUpperCase() + day.slice(1);
+    reply += `\n${dayName}:\n`;
+    classes.forEach(c => {
+      reply += `• ${c.name} — ${c.time} (${c.length})\n`;
+    });
+  }
+  return reply;
+}
 import A1_SCHEDULE from "./schedule.js";
 import FAQ from "./faq.js";
 const client = new OpenAI({
@@ -15,7 +26,13 @@ export default async function handler(req, res) {
     if (!message) {
       return res.status(400).json({ error: "Missing 'message'" });
     }
-
+// Check if user asked for the whole schedule
+if (/schedule/i.test(userMessage) && !/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(userMessage)) {
+  return new Response(
+    JSON.stringify({ reply: formatFullSchedule(A1_SCHEDULE) }),
+    { status: 200 }
+  );
+}
     const instructions = `
 You are A1 Performance Club's website assistant.
 
