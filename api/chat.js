@@ -1,4 +1,9 @@
+// api/chat.js
 import OpenAI from "openai";
+import A1_SCHEDULE from "./schedule.js";
+import FAQ from "./faq.js";
+
+// ✅ Helper: format full weekly schedule
 function formatFullSchedule(schedule) {
   let reply = "Weekly Class Schedule:\n";
   for (const [day, classes] of Object.entries(schedule)) {
@@ -10,33 +15,47 @@ function formatFullSchedule(schedule) {
   }
   return reply;
 }
-import A1_SCHEDULE from "./schedule.js";
-import FAQ from "./faq.js";
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+
+// ✅ Helper: check for FAQ match
+function findFAQAnswer(message) {
+  const lowerMsg = message.toLowerCase();
+  for (const item of FAQ) {
+    if (item.keywords.some(kw => lowerMsg.includes(kw))) {
+      return item.answer;
+    }
+  }
+  return null;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  try {
-    const { message } = req.body || {};
-    if (!message) {
-      return res.status(400).json({ error: "Missing 'message'" });
-    }
-// Check if user asked for the whole schedule
-if (/schedule/i.test(userMessage) && !/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(userMessage)) {
-  return new Response(
-    JSON.stringify({ reply: formatFullSchedule(A1_SCHEDULE) }),
-    { status: 200 }
-  );
-}
-    const instructions = `
-You are A1 Performance Club's website assistant.
+  const { message } = req.body || {};
+  if (!message) {
+    return res.status(400).json({ error: "Missing 'message'" });
+  }
 
-Here is the official schedule and FAQs you must always use when answering:
+  // ✅ Catch "weekly schedule" requests
+  if (
+    /schedule/i.test(message) &&
+    !/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(message)
+  ) {
+    return res.status(200).json({ reply: formatFullSchedule(A1_SCHEDULE) });
+  }
+
+  // ✅ Check FAQ first
+  const faqAnswer = findFAQAnswer(message);
+  if (faqAnswer) {
+    return res.status(200).json({ reply: faqAnswer });
+  }
+
+  // ✅ Otherwise: Ask OpenAI, but inject rules + data
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const instructions = `
+You are A1 Performance Club's assistant. Use ONLY the data provided.
 
 SCHEDULE:
 ${JSON.stringify(A1_SCHEDULE, null, 2)}
@@ -45,29 +64,28 @@ FAQ:
 ${FAQ.map(f => `Q: ${f.q}\nA: ${f.answer}`).join("\n\n")}
 
 Rules:
-- When asked "What’s on [day]?", reply ONLY with the exact classes from the schedule.
-- Format schedule answers like this:
+- If user asks "What’s on [day]?", list classes for that day like:
   [Day] Classes:
-  • [Class Name] — [Time] ([Length])
-  • [Class Name] — [Time] ([Length])
-- Never invent classes or times.
-- Always use the FAQ answers for pricing, booking, policies, etc.
-- If info isn’t in the schedule/FAQ, reply: “Please text/call 905-912-2582 for details.”
-- Keep answers short, under 120 words, friendly, and specific.
+  • [Class] — [Time] ([Length])
+- If they ask about "schedule" with no day, reply with the full weekly schedule above.
+- Always check FAQ first for pricing, booking, cancellations, etc.
+- Never invent info. If not in schedule/FAQ, reply: “Please text/call 905-912-2582 for details.”
+- Keep answers under 120 words, friendly, and specific.
 `;
-    const r = await client.responses.create({
+
+  try {
+    const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
-      instructions,
-      input: [{ role: "user", content: message }]
+      messages: [
+        { role: "system", content: instructions },
+        { role: "user", content: message }
+      ]
     });
 
-    // The OpenAI Node SDK returns `output_text` for quick access
-    const reply = r.output_text ?? "Sorry, I didn’t catch that.";
-
-    res.setHeader("Cache-Control", "no-store");
-    res.status(200).json({ reply });
-  } catch (e) {
-    console.error("API error:", e);
-    res.status(500).json({ error: "AI request failed" });
+    const reply = completion.choices[0].message.content;
+    return res.status(200).json({ reply });
+  } catch (error) {
+    console.error("OpenAI API error:", error);
+    return res.status(500).json({ error: "AI request failed" });
   }
 }
