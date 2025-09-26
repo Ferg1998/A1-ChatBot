@@ -2,7 +2,7 @@
 import OpenAI from "openai";
 import { google } from "googleapis";
 import Resend from "resend";
-import A1_SCHEDULE from "./schedule.js";
+import { A1_SCHEDULE, listDay, listWeek, detectScheduleIntent } from "./schedule.js";
 import FAQ, { debugFAQMatch } from "./faq.js";
 
 // Memory for conversations
@@ -39,10 +39,10 @@ async function sendLeadEmail(name, email, phone, message) {
       subject: "🔥 New Lead from A1 Chatbot",
       html: `
         <h2>New Lead Captured</h2>
-        <p><b>Name:</b> ${name}</p>
-        <p><b>Email:</b> ${email}</p>
-        <p><b>Phone:</b> ${phone}</p>
-        <p><b>Message:</b> ${message}</p>
+        <p><b>Name:</b> ${name || "-"}</p>
+        <p><b>Email:</b> ${email || "-"}</p>
+        <p><b>Phone:</b> ${phone || "-"}</p>
+        <p><b>Message:</b> ${message || "-"}</p>
       `,
     });
     console.log("✅ Lead email sent");
@@ -55,14 +55,32 @@ async function sendLeadEmail(name, email, phone, message) {
 function formatFullSchedule(schedule) {
   let reply = "📅 Weekly Class Schedule:\n";
   for (const [day, classes] of Object.entries(schedule)) {
-    const dayName = day.charAt(0).toUpperCase() + day.slice(1);
-    reply += `\n${dayName}:\n`;
+    reply += `\n${day}:\n`;
     classes.forEach(c => {
-      reply += `• ${c.name} — ${c.time} (${c.length})\n`;
+      reply += `• ${c.time} (${c.length} min)\n`;
     });
   }
   reply += "\n➡️ Text 905-912-2582 to reserve your spot.\n\nDid I answer your question? (Yes/No)";
   return reply;
+}
+
+// ✅ Helper: parse messy input for contact info
+function extractContactDetails(text) {
+  const result = {};
+
+  // Email
+  const emailMatch = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  if (emailMatch) result.email = emailMatch[0];
+
+  // Phone (7–15 digits, may include spaces, dashes, parentheses)
+  const phoneMatch = text.match(/(\+?\d[\d\s().-]{7,}\d)/);
+  if (phoneMatch) result.phone = phoneMatch[0];
+
+  // Name (basic: looks for “I’m NAME” or “My name is NAME” or “This is NAME”)
+  const nameMatch = text.match(/(?:i[' ]?m|my name is|this is)\s+([a-z][a-z\s'-]{1,40})/i);
+  if (nameMatch) result.name = nameMatch[1].trim();
+
+  return result;
 }
 
 export default async function handler(req, res) {
@@ -83,27 +101,40 @@ export default async function handler(req, res) {
     return res.status(200).json({ reply });
   }
 
-  // ✅ If user provides details (basic regex check)
-  if (/\S+@\S+/.test(message) && /\d{10}/.test(message)) {
-    console.log("📩 Lead details detected:", message);
-    const [namePart, email, phone] = message.split(/[, ]+/); // crude parse
-    const name = namePart || "Unknown";
-    const msg = "Lead from chatbot";
+  // ✅ Try to extract lead details from messy text
+  const contact = extractContactDetails(message);
+  if (contact.email || contact.phone || contact.name) {
+    console.log("📩 Lead details detected:", contact);
+
+    const values = [
+      new Date().toISOString(),
+      contact.name || "Unknown",
+      contact.email || "",
+      contact.phone || "",
+      "Lead via chatbot",
+      message,
+    ];
 
     // Save to Google Sheets
-    await appendToSheet([new Date().toISOString(), name, email, phone, msg, "Chatbot"]);
+    await appendToSheet(values);
 
     // Send email
-    await sendLeadEmail(name, email, phone, msg);
+    await sendLeadEmail(contact.name, contact.email, contact.phone, message);
 
     const reply = "✅ Got it! Thanks — our team will reach out shortly. 🎉";
     conversationHistory[sessionId].push({ role: "assistant", content: reply });
     return res.status(200).json({ reply });
   }
 
-  // ✅ Weekly schedule
-  if (/schedule/i.test(message)) {
+  // ✅ Schedule (weekly or day-specific)
+  const intent = detectScheduleIntent(message);
+  if (intent.kind === "weekly") {
     const reply = formatFullSchedule(A1_SCHEDULE);
+    conversationHistory[sessionId].push({ role: "assistant", content: reply });
+    return res.status(200).json({ reply });
+  }
+  if (intent.kind === "day") {
+    const reply = listDay(intent.day);
     conversationHistory[sessionId].push({ role: "assistant", content: reply });
     return res.status(200).json({ reply });
   }
