@@ -1,5 +1,6 @@
 import OpenAI from "openai";
-
+import A1_SCHEDULE from "../schedule.js";
+import FAQ from "../faq.js";
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
