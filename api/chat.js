@@ -1,9 +1,12 @@
 // api/chat.js
 import OpenAI from "openai";
 import { google } from "googleapis";
-import Resend from "resend";
-import { A1_SCHEDULE, listDay, listWeek, detectScheduleIntent } from "./schedule.js";
+import { Resend } from "resend";   // ✅ FIXED
+import A1_SCHEDULE, { listDay, listWeek, detectScheduleIntent } from "./schedule.js";
 import FAQ, { debugFAQMatch } from "./faq.js";
+
+// ✅ Setup Email
+const resend = new Resend(process.env.EMAIL_API_KEY);
 
 // Memory for conversations
 let conversationHistory = {};
