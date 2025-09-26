@@ -18,9 +18,21 @@ export default async function handler(req, res) {
 
     const instructions = `
 You are A1 Performance Club's website assistant.
-Answer only about classes, schedule, trials, pricing ranges, and booking steps.
-If off-topic, redirect back to A1 info. Keep answers under 120 words.`;
 
+Here is the official schedule and FAQs you must always use when answering:
+
+SCHEDULE:
+${JSON.stringify(A1_SCHEDULE, null, 2)}
+
+FAQ:
+${FAQ.map(f => `Q: ${f.q}\nA: ${f.answer}`).join("\n\n")}
+
+Rules:
+- Always answer directly from the schedule/FAQ above.
+- If a client asks "What’s on [day]?", use the SCHEDULE to list exact classes with times.
+- Keep answers short (under 120 words), friendly, and specific.
+- If info isn’t in the schedule/FAQ, say “Please contact us at 905-912-2582 for details.”
+`;
     const r = await client.responses.create({
       model: "gpt-4o-mini",
       instructions,
