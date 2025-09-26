@@ -29,11 +29,13 @@ function findFAQAnswer(message) {
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
+    console.error("❌ Invalid request method:", req.method);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const { message } = req.body || {};
   if (!message) {
+    console.error("⚠️ Missing 'message' in request body:", req.body);
     return res.status(400).json({ error: "Missing 'message'" });
   }
 
@@ -42,12 +44,14 @@ export default async function handler(req, res) {
     /schedule/i.test(message) &&
     !/(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/i.test(message)
   ) {
+    console.log("📅 Weekly schedule requested");
     return res.status(200).json({ reply: formatFullSchedule(A1_SCHEDULE) });
   }
 
   // ✅ Check FAQ first
   const faqAnswer = findFAQAnswer(message);
   if (faqAnswer) {
+    console.log("❓ FAQ matched:", faqAnswer);
     return res.status(200).json({ reply: faqAnswer });
   }
 
@@ -74,6 +78,8 @@ Rules:
 `;
 
   try {
+    console.log("🤖 Sending request to OpenAI with message:", message);
+
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -83,9 +89,20 @@ Rules:
     });
 
     const reply = completion.choices[0].message.content;
+    console.log("✅ OpenAI reply:", reply);
+
     return res.status(200).json({ reply });
   } catch (error) {
-    console.error("OpenAI API error:", error);
-    return res.status(500).json({ error: "AI request failed" });
+    console.error("❌ OpenAI API error:", {
+      message: error.message,
+      stack: error.stack,
+      status: error.status,
+      response: error.response?.data
+    });
+
+    return res.status(500).json({
+      error: "AI request failed",
+      details: error.message
+    });
   }
 }
