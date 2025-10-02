@@ -1,90 +1,115 @@
+import OpenAI from "openai";
+import { google } from "googleapis";
+import { Resend } from "resend";
+import A1_SCHEDULE from "./schedule.js";
+import FAQ, { debugFAQMatch } from "./faq.js";
 import fs from "fs";
 import path from "path";
 
-// Load the JSON flow once
-const flowPath = path.join(process.cwd(), "flow.json");
-const flow = JSON.parse(fs.readFileSync(flowPath, "utf8")).flow;
-
-// Simple in-memory sessions for testing
-const sessions = {};
-
-function getStep(stepId) {
-  return flow.find((s) => s.id === stepId);
+// ✅ Google Sheets setup
+async function appendToSheet(values) {
+  try {
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+    const sheets = google.sheets({ version: "v4", auth });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Sheet1!A:F",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [values] },
+    });
+    console.log("✅ Lead saved to Google Sheet:", values);
+  } catch (err) {
+    console.error("❌ Google Sheets error:", err);
+    throw err;
+  }
 }
 
-export default function handler(req, res) {
+// ✅ Email setup
+const resend = new Resend(process.env.EMAIL_API_KEY);
+
+async function sendLeadEmail(name, email, phone, message) {
+  try {
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: process.env.EMAIL_TO,
+      subject: "🔥 New Lead from A1 Chatbot",
+      html: `
+        <h2>New Lead Captured</h2>
+        <p><b>Name:</b> ${name || "N/A"}</p>
+        <p><b>Email:</b> ${email || "N/A"}</p>
+        <p><b>Phone:</b> ${phone || "N/A"}</p>
+        <p><b>Message:</b> ${message}</p>
+      `,
+    });
+    console.log("✅ Lead email sent:", { name, email, phone });
+  } catch (err) {
+    console.error("❌ Email error:", err);
+    throw err;
+  }
+}
+
+// ✅ AI-powered lead extractor
+async function extractLeadDetails(message) {
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const prompt = `
+  Extract the person's full name, email, and phone number from this text.
+  Return only valid JSON in the format:
+  {"name": "...", "email": "...", "phone": "..."}
+  If any field is missing, use null.
+  Text: """${message}"""
+  `;
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0,
+  });
+
+  try {
+    const parsed = JSON.parse(response.choices[0].message.content);
+    return {
+      name: parsed.name || null,
+      email: parsed.email || null,
+      phone: parsed.phone || null,
+    };
+  } catch (err) {
+    console.error("❌ Failed to parse AI response:", err);
+    return { name: null, email: null, phone: null };
+  }
+}
+
+// ✅ Main handler
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { message, session_id = "default" } = req.body;
-
-  if (!sessions[session_id]) {
-    // start at greeting
-    sessions[session_id] = {
-      currentStep: "greeting",
-      data: {}
-    };
+  const { message } = req.body;
+  if (!message) {
+    return res.status(400).json({ error: "Missing 'message'" });
   }
 
-  let session = sessions[session_id];
-  let step = getStep(session.currentStep);
+  try {
+    // 1. Extract lead details with AI
+    const { name, email, phone } = await extractLeadDetails(message);
+    console.log("📌 Parsed Lead:", { name, email, phone });
 
-  // Save user response if needed
-  if (step.save_as) {
-    if (Array.isArray(step.save_as)) {
-      const parts = message.split(" ");
-      if (parts.length >= 2) {
-        session.data.email = parts[0];
-        session.data.phone = parts[1];
-      }
-    } else {
-      session.data[step.save_as] = message;
-    }
-  }
+    // 2. Save to Google Sheets
+    await appendToSheet([new Date().toISOString(), name, email, phone, message]);
 
-  // Handle branching logic
-  if (step.branch) {
-    const lowerMsg = message.toLowerCase();
-    if (lowerMsg.startsWith("y")) {
-      session.currentStep = step.branch.yes;
-    } else {
-      session.currentStep = step.branch.no;
-    }
-  } else {
-    session.currentStep = step.next;
-  }
+    // 3. Send email notification
+    await sendLeadEmail(name, email, phone, message);
 
-  // If we're at confirmation, finalize lead
-  if (session.currentStep === "confirmation") {
-    session.data.timestamp = new Date().toISOString();
-    session.data.status = "New Lead";
-
-    const confirmStep = getStep("confirmation");
-    res.json({
-      reply: confirmStep.bot
-        .replace("{{name}}", session.data.name || "")
-        .replace("{{email}}", session.data.email || "")
-        .replace("{{phone}}", session.data.phone || ""),
-      lead: session.data
+    // 4. Bot reply
+    res.status(200).json({
+      reply: `Thanks ${name || "there"}! I’ve saved your info: ${email || "N/A"}, ${phone || "N/A"}`,
     });
-
-    // ⚡️ Here’s where you’d call your Google Sheets append function
-    console.log("Captured lead:", session.data);
-
-    // Reset session for new conversation
-    delete sessions[session_id];
-    return;
+  } catch (err) {
+    console.error("❌ Chat handler error:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  // Get the next step
-  step = getStep(session.currentStep);
-
-  // Fill placeholders in bot reply
-  let reply = step.bot;
-  for (const key in session.data) {
-    reply = reply.replace(`{{${key}}}`, session.data[key]);
-  }
-
-  res.json({ reply });
 }
