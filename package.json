@@ -62,6 +62,9 @@
     {
       "id": "confirmation",
       "bot": "Amazing 🚀 you’re all set, {{name}}! I’ll send a confirmation to {{email}} and {{phone}}. Can’t wait to see you in class 💪",
+      "save": {
+        "timestamp": "auto"
+      },
       "end": true
     }
   ]
