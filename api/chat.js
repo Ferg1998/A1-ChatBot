@@ -1,10 +1,8 @@
+// api/chat.js
+
 import OpenAI from "openai";
 import { google } from "googleapis";
 import { Resend } from "resend";
-import A1_SCHEDULE from "./schedule.js";
-import FAQ, { debugFAQMatch } from "./faq.js";
-import fs from "fs";
-import path from "path";
 
 // ✅ Google Sheets setup
 async function appendToSheet(values) {
@@ -16,7 +14,7 @@ async function appendToSheet(values) {
     const sheets = google.sheets({ version: "v4", auth });
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Sheet1!A:F",
+      range: "Sheet1!A:F", // ⚠️ adjust tab name if needed
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
     });
@@ -27,7 +25,7 @@ async function appendToSheet(values) {
   }
 }
 
-// ✅ Email setup
+// ✅ Email setup (Resend)
 const resend = new Resend(process.env.EMAIL_API_KEY);
 
 async function sendLeadEmail(name, email, phone, message) {
@@ -98,18 +96,37 @@ export default async function handler(req, res) {
     const { name, email, phone } = await extractLeadDetails(message);
     console.log("📌 Parsed Lead:", { name, email, phone });
 
-    // 2. Save to Google Sheets
-    await appendToSheet([new Date().toISOString(), name, email, phone, message]);
+    // 2. If no lead details found, fallback with friendly greetings
+    if (!name && !email && !phone) {
+      const greetings = [
+        "Hey 👋 welcome to A1 Performance Club! Can I grab your name, email, and phone to get you started?",
+        "Hi there 🙌 we’d love to help you out! What’s your name, email, and phone so we can connect?",
+        "Welcome to A1 Performance Club 💪 Drop your name, email, and phone number to get started!"
+      ];
+      const reply = greetings[Math.floor(Math.random() * greetings.length)];
 
-    // 3. Send email notification
+      return res.status(200).json({ reply });
+    }
+
+    // 3. Save to Google Sheets
+    await appendToSheet([
+      new Date().toISOString(),
+      name,
+      email,
+      phone,
+      message,
+    ]);
+
+    // 4. Send email notification
     await sendLeadEmail(name, email, phone, message);
 
-    // 4. Bot reply
-    res.status(200).json({
-      reply: `Thanks ${name || "there"}! I’ve saved your info: ${email || "N/A"}, ${phone || "N/A"}`,
+    // 5. Bot confirmation reply
+    return res.status(200).json({
+      reply: `Thanks ${name || "there"}! I’ve saved your info: ${email || "N/A"}, ${phone || "N/A"}`
     });
+
   } catch (err) {
     console.error("❌ Chat handler error:", err);
-    res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: "Internal server error" });
   }
 }
