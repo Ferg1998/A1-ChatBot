@@ -1,16 +1,68 @@
 {
-  "name": "a1-chatbot",
-  "version": "1.0.0",
-  "description": "A1 Performance Club chatbot API",
-  "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "dev": "vercel dev",
-    "start": "node api/chat.js"
-  },
-  "dependencies": {
-    "googleapis": "^131.0.0",
-    "openai": "^4.0.0",
-    "resend": "^2.0.0"
-  }
+  "flow": [
+    {
+      "id": "greeting",
+      "bot": "Hey 👋 welcome to A1 Performance Club! Can I grab your first name to get started?",
+      "expect": "text",
+      "save_as": "name",
+      "next": "ask_contact"
+    },
+    {
+      "id": "ask_contact",
+      "bot": "Great to meet you, {{name}}! What’s the best email and phone number to reach you at?",
+      "expect": "email_and_phone",
+      "save_as": ["email", "phone"],
+      "validate": {
+        "email": "must include @ and domain",
+        "phone": "must be 10 digits"
+      },
+      "next": "confirm_contact"
+    },
+    {
+      "id": "confirm_contact",
+      "bot": "Just to confirm — {{name}}, email {{email}}, phone {{phone}} — is that right?",
+      "expect": "yes_no",
+      "branch": {
+        "yes": "ask_goal",
+        "no": "ask_contact"
+      }
+    },
+    {
+      "id": "ask_goal",
+      "bot": "Awesome ✅ Quick question: what’s your main goal right now?\n1️⃣ Lose weight\n2️⃣ Build strength\n3️⃣ Improve energy & fitness\n4️⃣ Sports performance",
+      "expect": "choice",
+      "options": ["Lose weight", "Build strength", "Improve energy & fitness", "Sports performance"],
+      "save_as": "goal",
+      "next": "offer_program"
+    },
+    {
+      "id": "offer_program",
+      "bot": "Love it — our 28-Day Transformation is designed for {{goal}}. You’ll get unlimited group classes, a movement assessment, and a personalized nutrition guide — all for just $199. The best way to start is with a free trial class. Do mornings or evenings work better for you?",
+      "expect": "choice",
+      "options": ["Morning", "Evening"],
+      "save_as": "preferred_time",
+      "next": "schedule_class"
+    },
+    {
+      "id": "schedule_class",
+      "bot": "Perfect. We’ve got {{preferred_time}} classes available this week. Would you like me to pencil you in for Wednesday at 7am to get started?",
+      "expect": "yes_no",
+      "branch": {
+        "yes": "confirmation",
+        "no": "alternative_offer"
+      }
+    },
+    {
+      "id": "alternative_offer",
+      "bot": "No worries 👍 What day works better for you this week?",
+      "expect": "text",
+      "save_as": "alt_time",
+      "next": "confirmation"
+    },
+    {
+      "id": "confirmation",
+      "bot": "Amazing 🚀 you’re all set, {{name}}! I’ll send a confirmation to {{email}} and {{phone}}. Can’t wait to see you in class 💪",
+      "end": true
+    }
+  ]
 }
