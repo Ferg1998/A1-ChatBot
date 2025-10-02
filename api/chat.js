@@ -3,6 +3,8 @@
 import OpenAI from "openai";
 import { google } from "googleapis";
 import { Resend } from "resend";
+import A1_SCHEDULE from "./schedule.js";
+import FAQ from "./faq.js";
 
 // ✅ Google Sheets setup
 async function appendToSheet(values) {
@@ -14,14 +16,13 @@ async function appendToSheet(values) {
     const sheets = google.sheets({ version: "v4", auth });
     await sheets.spreadsheets.values.append({
       spreadsheetId: process.env.GOOGLE_SHEET_ID,
-      range: "Sheet1!A:F", // ⚠️ adjust tab name if needed
+      range: "Sheet1!A:F",
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
     });
     console.log("✅ Lead saved to Google Sheet:", values);
   } catch (err) {
     console.error("❌ Google Sheets error:", err);
-    throw err;
   }
 }
 
@@ -45,7 +46,6 @@ async function sendLeadEmail(name, email, phone, message) {
     console.log("✅ Lead email sent:", { name, email, phone });
   } catch (err) {
     console.error("❌ Email error:", err);
-    throw err;
   }
 }
 
@@ -92,38 +92,48 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Extract lead details with AI
+    // 1. Try extracting lead info
     const { name, email, phone } = await extractLeadDetails(message);
     console.log("📌 Parsed Lead:", { name, email, phone });
 
-    // 2. If no lead details found, fallback with friendly greetings
-    if (!name && !email && !phone) {
-      const greetings = [
-        "Hey 👋 welcome to A1 Performance Club! Can I grab your name, email, and phone to get you started?",
-        "Hi there 🙌 we’d love to help you out! What’s your name, email, and phone so we can connect?",
-        "Welcome to A1 Performance Club 💪 Drop your name, email, and phone number to get started!"
-      ];
-      const reply = greetings[Math.floor(Math.random() * greetings.length)];
+    // 2. If lead info is found → save immediately
+    if (name || email || phone) {
+      await appendToSheet([new Date().toISOString(), name, email, phone, message]);
+      await sendLeadEmail(name, email, phone, message);
 
-      return res.status(200).json({ reply });
+      return res.status(200).json({
+        reply: `Thanks ${name || "there"}! I’ve saved your info: ${email || "N/A"}, ${phone || "N/A"}`
+      });
     }
 
-    // 3. Save to Google Sheets
-    await appendToSheet([
-      new Date().toISOString(),
-      name,
-      email,
-      phone,
-      message,
-    ]);
+    // 3. If no lead info → check if it's a FAQ or schedule question
+    const lower = message.toLowerCase();
 
-    // 4. Send email notification
-    await sendLeadEmail(name, email, phone, message);
+    // Check FAQs
+    const faqAnswer = FAQ.find((f) =>
+      lower.includes(f.q.toLowerCase())
+    );
+    if (faqAnswer) {
+      return res.status(200).json({
+        reply: `${faqAnswer.a}\n\nBy the way, can I grab your name, email, and phone so we can follow up?`
+      });
+    }
 
-    // 5. Bot confirmation reply
-    return res.status(200).json({
-      reply: `Thanks ${name || "there"}! I’ve saved your info: ${email || "N/A"}, ${phone || "N/A"}`
-    });
+    // Check for schedule-related queries
+    if (lower.includes("schedule") || lower.includes("class")) {
+      return res.status(200).json({
+        reply: `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\nWould you like to share your name, email, and phone so we can book you into a trial class?`
+      });
+    }
+
+    // 4. Otherwise fallback greeting
+    const greetings = [
+      "Hey 👋 welcome to A1 Performance Club! Can I grab your name, email, and phone to get you started?",
+      "Hi there 🙌 we’d love to help you out! What’s your name, email, and phone so we can connect?",
+      "Welcome to A1 Performance Club 💪 Drop your name, email, and phone number to get started!"
+    ];
+    const reply = greetings[Math.floor(Math.random() * greetings.length)];
+    return res.status(200).json({ reply });
 
   } catch (err) {
     console.error("❌ Chat handler error:", err);
