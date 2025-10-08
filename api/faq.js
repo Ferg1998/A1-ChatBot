@@ -1,124 +1,117 @@
-// faq.js
+// faq.js — A1 Performance Club Full FAQ (Updated Oct 2025)
 
 const FAQ = [
+  // 🏋️ Membership / Pricing
   {
-    q: "What classes do you offer?",
-    keywords: ["classes", "class types", "offer"],
-    answer:
-      "We offer Sweat & Sculpt classes designed to build lean muscle, lose body fat, and gain strength. Classes use barbells, dumbbells, kettlebells, and cables."
+    q: "group classes",
+    keywords: ["group", "class", "classes", "group classes"],
+    answer: "We offer flexible group class memberships — 1x, 2x, 3x per week, or *unlimited*! 💪 Right now, we’ve got a special promotion for unlimited group classes as part of our 💥 28-Day Transformation — a 4-week challenge built to help you reset your routine, build strength, and feel amazing!\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Class length",
-    keywords: ["how long", "duration", "length"],
-    answer: "All classes are 45 minutes, including warm-up and cool-down."
+    q: "membership cost",
+    keywords: ["price", "pricing", "membership", "cost", "fee", "how much"],
+    answer: "Memberships range from **$140/month – $399.99/month** depending on your plan. Our current promo: **unlimited group classes for $199.99 (28 days)** with the 28-Day Transformation challenge 💪.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Capacity / booking",
-    keywords: ["capacity", "how many", "book", "reserve", "spots"],
-    answer:
-      "Each class is capped at 8 people with at least 2 coaches. Booking is required."
-  },
-  {
-    q: "How to book",
-    keywords: ["book", "sign up", "reserve", "schedule", "register"],
-    answer:
-      "For your first class, call or text 905-912-2582. After that, use our booking system."
-  },
-  {
-    q: "Free trial",
+    q: "free trial",
     keywords: ["free", "trial", "first class"],
-    answer:
-      "Yes — your first class is free! Just call/text 905-912-2582 to reserve."
+    answer: "✅ Yes! Your **first class is completely free** — come try us out, no strings attached. Call or text 📞 **905-912-2582** to book your spot.\n\n➡️ Would you like to share your name, email, and phone so we can help you book your free class?"
   },
   {
-    q: "Pricing",
-    keywords: ["price", "pricing", "cost", "membership", "drop-in", "fee"],
-    answer:
-      "Drop-in classes are $35. Membership ranges from $139.99–$399.99/month depending on frequency. Current deal: unlimited classes, 50% off for 4 weeks ($199.99 total)."
+    q: "drop in or class packs",
+    keywords: ["drop in", "class pack", "package"],
+    answer: "We don’t offer class packs, but you can **drop in for $35 per class** anytime! 💥\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Cancellation policy",
-    keywords: ["cancel", "cancellation", "late", "no show", "policy"],
-    answer:
-      "There is a $35 fee for late cancels/no-shows. Cancel at least 12 hours before class to avoid charges."
+    q: "discounts",
+    keywords: ["discount", "deal", "student", "corporate", "family", "refer"],
+    answer: "Right now our 💥 **28-Day Transformation** promo is the best value at **$199.99 for 28 days**. Plus, if you **refer a friend** who signs up, you’ll *both* get **25% off** your next month 🎉.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Location & parking",
-    keywords: ["where", "location", "address", "parking", "map"],
-    answer:
-      "We’re located at 875 Main St W, Hamilton. Lots of free on-site parking available."
+    q: "cancellation refund policy",
+    keywords: ["cancel", "refund", "policy", "buyout", "terminate"],
+    answer: "We don’t offer refunds. For long-term memberships, early cancellation requires a **20% buy-out** of the remaining term.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
+  },
+
+  // 📍 Location / Logistics
+  {
+    q: "location",
+    keywords: ["where", "location", "address", "map"],
+    answer: "📍 We’re located at **875 Main St W, Unit L1-11, Hamilton, Ontario** — just behind the main building. Look for the **A1 Performance Club** signs!\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Contact",
-    keywords: ["contact", "phone", "email", "number"],
-    answer:
-      "Call/text us at 905-912-2582. IG: @a1performanceclub."
+    q: "parking",
+    keywords: ["parking", "car", "lot"],
+    answer: "✅ Yes — there’s **tons of free parking** right outside the gym 🚗.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Age limits / waivers",
-    keywords: ["age", "waiver", "consent", "minimum"],
-    answer:
-      "We welcome all adults with no recent medical incidents. Waivers must be signed before participation."
+    q: "bus transit",
+    keywords: ["bus", "transit", "public transport", "stop"],
+    answer: "🚏 There’s a **bus stop right out front** on Main St W — super convenient if you’re coming by transit.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Late policy",
-    keywords: ["late", "cut off", "grace period"],
-    answer:
-      "Cancel within 12 hours to avoid charges. Booking closes 30 minutes before class starts."
+    q: "hours",
+    keywords: ["hours", "open", "close", "time"],
+    answer: "We run **group classes Monday – Sunday**, mornings and evenings 📅. For personal training, sessions are **by appointment** — just call or text 📞 **905-912-2582** to book.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Personal training",
-    keywords: ["personal training", "pt", "1:1", "trainer"],
-    answer:
-      "We offer personal training at $60–$115/session depending on trainer and frequency. Book a consult for details."
+    q: "amenities",
+    keywords: ["showers", "locker", "change room", "washroom", "towel"],
+    answer: "We have **lockers and change rooms** available for all members. (Showers coming soon 🚿)\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
+  },
+
+  // 🏃 Classes / Training
+  {
+    q: "types of classes",
+    keywords: ["class type", "training", "program", "sweat", "sculpt"],
+    answer: "We run a mix of **strength, conditioning, and sculpt-style group sessions** — designed to burn fat, build lean muscle, and boost performance. Our signature classes include *Sweat & Sculpt*, *Buns & Tums*, and the **28-Day Transformation** 🏋️‍♀️.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Semi-private training",
-    keywords: ["semi private", "small group", "partner training"],
-    answer:
-      "Available case-by-case. Call/text 905-912-2582 for details."
+    q: "schedule",
+    keywords: ["schedule", "timetable", "when", "class times"],
+    answer: "We host **morning and evening group classes Monday – Sunday**, plus mid-day options on select days. Ask anytime and I can share today’s class lineup 📅.\n\n➡️ Would you like to share your name, email, and phone so we can help you book your first class?"
   },
   {
-    q: "Amenities",
-    keywords: ["amenities", "showers", "lockers", "towels", "change room"],
-    answer:
-      "We have lockers and washrooms/changerooms. No towel service provided."
+    q: "class size",
+    keywords: ["how many", "capacity", "size", "limit", "spots"],
+    answer: "We **cap every group class at 8 people** so you always get personalized coaching and space to train 👥.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Accessibility",
-    keywords: ["stairs", "elevator", "wheelchair", "accessible", "ramp"],
-    answer:
-      "Accessibility details vary — contact us directly for assistance."
+    q: "personal training",
+    keywords: ["personal training", "1 on 1", "pt", "private training"],
+    answer: "Absolutely — 1-on-1 personal training is our **bread and butter** 💪. You’ll work directly with an A1 coach to hit your goals faster and safer.\n\n➡️ Would you like to share your name, email, and phone so we can help you set up a consultation?"
   },
   {
-    q: "What to bring",
-    keywords: ["bring", "wear", "gear", "equipment"],
-    answer:
-      "Bring indoor shoes, a towel, water, and arrive 15 minutes early."
+    q: "athletic development",
+    keywords: ["athlete", "youth", "sports", "development", "performance"],
+    answer: "Yes! We run **youth athletic development** programs focused on **speed, agility, power, and injury prevention** for hockey, football, track, and other athletes ⚡.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Holidays/closures",
-    keywords: ["holiday", "closed", "closure", "hours"],
-    answer:
-      "We’re open daily, based on class schedule and appointments."
+    q: "28 day transformation",
+    keywords: ["28 day", "transformation", "challenge"],
+    answer: "Our 💥 **28-Day Transformation** includes **unlimited group classes**, a **movement assessment**, and a **personalized macro-based nutrition guide** — all for **$199.99**. It’s the perfect way to build momentum and see real results in 4 weeks!\n\n➡️ Would you like to share your name, email, and phone so we can reserve your spot?"
+  },
+
+  // ⚡ Results / Experience
+  {
+    q: "results timeline",
+    keywords: ["results", "progress", "see change", "timeline"],
+    answer: "Most members start feeling stronger and more energized within a few weeks 💪. Everyone’s different — call or text 📞 **905-912-2582** and we’ll map out your timeline together.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Discounts",
-    keywords: ["discount", "student", "military", "corporate", "deal"],
-    answer:
-      "Currently, no discounts are offered."
+    q: "beginner friendly",
+    keywords: ["beginner", "new", "first time", "never worked out"],
+    answer: "Not at all — **anyone can join!** Our coaches tailor every session so beginners and advanced members train confidently side-by-side 🙌.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Waitlist",
-    keywords: ["waitlist", "full class", "standby"],
-    answer:
-      "If a class is full, please contact us to be added to a waitlist."
+    q: "nutrition",
+    keywords: ["nutrition", "diet", "meal", "food", "macro"],
+    answer: "Yes 🥗 we include a **macro-based nutrition guide** with all programs and can refer you to our **registered dietitian partner** for extra support.\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   },
   {
-    q: "Intro packs",
-    keywords: ["intro", "first month", "deal", "starter"],
-    answer:
-      "We often run intro offers like our current unlimited group class deal. Contact us to check availability."
+    q: "trainers qualifications",
+    keywords: ["trainer", "coach", "staff", "who", "qualifications"],
+    answer: "Our coaches are **certified movement specialists and strength & conditioning trainers** with years of experience in performance and transformation coaching. Check out our Coaches page or call/text 📞 **905-912-2582** to learn more!\n\n➡️ Would you like to share your name, email, and phone so we can help you get started?"
   }
 ];
 
@@ -126,7 +119,7 @@ const FAQ = [
 export function debugFAQMatch(userMessage) {
   const lowerMsg = userMessage.toLowerCase();
   for (const item of FAQ) {
-    const matched = item.keywords.filter(kw => lowerMsg.includes(kw));
+    const matched = item.keywords.filter((kw) => lowerMsg.includes(kw));
     if (matched.length > 0) {
       console.log(`🔎 FAQ Debug → Q: "${item.q}" matched keywords:`, matched);
       return item.answer;
