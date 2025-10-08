@@ -1,4 +1,4 @@
-// api/chat.js
+// api/chat.js — Final A1 Chatbot Version
 
 import OpenAI from "openai";
 import { google } from "googleapis";
@@ -92,47 +92,48 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Try extracting lead info
+    const lower = message.toLowerCase();
+
+    // 1️⃣ Extract lead info (AI)
     const { name, email, phone } = await extractLeadDetails(message);
     console.log("📌 Parsed Lead:", { name, email, phone });
 
-    // 2. If lead info is found → save immediately
+    // 2️⃣ If lead info found → save lead
     if (name || email || phone) {
       await appendToSheet([new Date().toISOString(), name, email, phone, message]);
       await sendLeadEmail(name, email, phone, message);
 
       return res.status(200).json({
-        reply: `Thanks ${name || "there"}! I’ve saved your info: ${email || "N/A"}, ${phone || "N/A"}`
+        reply: `Thanks ${name || "there"}! I’ve saved your info: ${email || "N/A"}, ${phone || "N/A"}`,
       });
     }
 
-    // 3. If no lead info → check if it's a FAQ or schedule question
-    const lower = message.toLowerCase();
-
-    // Check FAQs
+    // 3️⃣ Try matching FAQ (using keyword search)
     const faqAnswer = FAQ.find((f) =>
-      lower.includes(f.q.toLowerCase())
+      f.keywords.some((kw) => lower.includes(kw))
     );
+
     if (faqAnswer) {
       return res.status(200).json({
-        reply: `${faqAnswer.a}\n\nBy the way, can I grab your name, email, and phone so we can follow up?`
+        reply: faqAnswer.answer,
       });
     }
 
-    // Check for schedule-related queries
+    // 4️⃣ Schedule-related fallback
     if (lower.includes("schedule") || lower.includes("class")) {
       return res.status(200).json({
-        reply: `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\nWould you like to share your name, email, and phone so we can book you into a trial class?`
+        reply: `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\nWould you like to share your name, email, and phone so we can book you into a trial class?`,
       });
     }
 
-    // 4. Otherwise fallback greeting
+    // 5️⃣ Default friendly greeting fallback
     const greetings = [
       "Hey 👋 welcome to A1 Performance Club! Can I grab your name, email, and phone to get you started?",
       "Hi there 🙌 we’d love to help you out! What’s your name, email, and phone so we can connect?",
-      "Welcome to A1 Performance Club 💪 Drop your name, email, and phone number to get started!"
+      "Welcome to A1 Performance Club 💪 Drop your name, email, and phone number to get started!",
     ];
     const reply = greetings[Math.floor(Math.random() * greetings.length)];
+
     return res.status(200).json({ reply });
 
   } catch (err) {
