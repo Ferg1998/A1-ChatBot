@@ -1,0 +1,10 @@
+{
+  "name": "a1-chatbot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "googleapis": "^131.0.0",
+    "resend": "^2.1.0"
+  }
+}
