@@ -1,4 +1,4 @@
-// api/chat.js — A1 Chatbot with Memory + Lead Capture + Sheets + Email
+// api/chat.js — A1 Chatbot with Memory + Lead Capture + Google Sheets + Email
 
 import { google } from "googleapis";
 import { Resend } from "resend";
@@ -8,22 +8,28 @@ import FAQ from "./faq.js";
 // 🧠 In-memory sessions (per session_id)
 const sessions = {};
 
-// ✅ Google Sheets setup (safe)
+// ✅ Google Sheets helper
 async function appendToSheet(values) {
   try {
-    if (!process.env.GOOGLE_SERVICE_ACCOUNT || !process.env.GOOGLE_SHEET_ID) {
-      console.warn("⚠️ GOOGLE_SERVICE_ACCOUNT or GOOGLE_SHEET_ID missing. Skipping sheet append.");
+    const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT;
+    const sheetId = process.env.GOOGLE_SHEET_ID;
+
+    if (!serviceAccountJson || !sheetId) {
+      console.warn("⚠️ GOOGLE_SERVICE_ACCOUNT or GOOGLE_SHEET_ID missing. Skipping appendToSheet.");
       return;
     }
 
+    const credentials = JSON.parse(serviceAccountJson);
+
     const auth = new google.auth.GoogleAuth({
-      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
+      credentials,
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
 
     const sheets = google.sheets({ version: "v4", auth });
+
     await sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      spreadsheetId: sheetId,
       range: "Sheet1!A:F",
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
@@ -32,45 +38,46 @@ async function appendToSheet(values) {
     console.log("✅ Lead saved to Google Sheet:", values);
   } catch (err) {
     console.error("❌ Google Sheets error:", err);
-    // don't throw — we never want to crash the function
+    // do not throw — never crash the function because of Sheets
   }
 }
 
-// ✅ Email setup (safe)
-async function sendLeadEmail(name, email, phone, message) {
+// ✅ Email helper (Resend)
+async function sendLeadEmail(name, email, phone, message, sessionId) {
   try {
-    if (
-      !process.env.EMAIL_API_KEY ||
-      !process.env.EMAIL_FROM ||
-      !process.env.EMAIL_TO
-    ) {
-      console.warn("⚠️ Email env vars missing. Skipping email send.");
+    const apiKey = process.env.EMAIL_API_KEY;
+    const from = process.env.EMAIL_FROM;
+    const to = process.env.EMAIL_TO;
+
+    if (!apiKey || !from || !to) {
+      console.warn("⚠️ EMAIL_API_KEY, EMAIL_FROM, or EMAIL_TO missing. Skipping sendLeadEmail.");
       return;
     }
 
-    const resend = new Resend(process.env.EMAIL_API_KEY);
+    const resend = new Resend(apiKey);
 
     await resend.emails.send({
-      from: process.env.EMAIL_FROM,
-      to: process.env.EMAIL_TO,
+      from,
+      to,
       subject: "🔥 New Lead from A1 Chatbot",
       html: `
         <h2>New Lead Captured from A1 Chatbot</h2>
         <p><b>Name:</b> ${name || "N/A"}</p>
         <p><b>Email:</b> ${email || "N/A"}</p>
         <p><b>Phone:</b> ${phone || "N/A"}</p>
-        <p><b>Message:</b> ${message || "N/A"}</p>
+        <p><b>Last Message:</b> ${message || "N/A"}</p>
+        <p><b>Session ID:</b> ${sessionId || "N/A"}</p>
       `,
     });
 
     console.log("✅ Lead email sent:", { name, email, phone });
   } catch (err) {
     console.error("❌ Email error:", err);
-    // don't throw
+    // don't throw — keep bot alive
   }
 }
 
-// Simple lead extractor using regex + phrases
+// 🔎 Simple lead extractor (name / email / phone)
 function extractLeadFromText(message) {
   const text = message.toLowerCase();
 
@@ -160,7 +167,7 @@ export default async function handler(req, res) {
       leadUpdated = true;
     }
 
-    // If we have enough lead info, confirm capture + send to Sheet + email
+    // If we have enough lead info, confirm capture + send to Google Sheets + email
     if (leadUpdated && (session.lead.email || session.lead.phone)) {
       const name = session.lead.name || "there";
       const email = session.lead.email || "N/A";
@@ -177,7 +184,7 @@ export default async function handler(req, res) {
       ]);
 
       // Send notification email
-      await sendLeadEmail(name, email, phone, message);
+      await sendLeadEmail(name, email, phone, message, sessionId);
 
       const reply = `Thanks ${name}! I’ve saved your info: ${email}, ${phone}. We’ll reach out to help you get started 💪`;
 
@@ -240,7 +247,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ reply });
   } catch (err) {
-    console.error("❌ Chat handler error:", err);
+    console.error("❌ Chat handler error (outer catch):", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 }
