@@ -1,4 +1,4 @@
-// api/chat.js — Final A1 Chatbot Version
+// api/chat.js — Final A1 Chatbot Version with CORS Fix
 
 import OpenAI from "openai";
 import { google } from "googleapis";
@@ -80,13 +80,26 @@ async function extractLeadDetails(message) {
   }
 }
 
-// ✅ Main handler
 export default async function handler(req, res) {
+
+  // ------------------------------
+  // 🔥 CORS FIX (Browser → Vercel)
+  // ------------------------------
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+  // ------------------------------
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   const { message } = req.body;
+
   if (!message) {
     return res.status(400).json({ error: "Missing 'message'" });
   }
@@ -94,11 +107,11 @@ export default async function handler(req, res) {
   try {
     const lower = message.toLowerCase();
 
-    // 1️⃣ Extract lead info (AI)
+    // 1️⃣ AI Lead Extraction
     const { name, email, phone } = await extractLeadDetails(message);
     console.log("📌 Parsed Lead:", { name, email, phone });
 
-    // 2️⃣ If lead info found → save lead
+    // If ANY field exists → treat message as lead
     if (name || email || phone) {
       await appendToSheet([new Date().toISOString(), name, email, phone, message]);
       await sendLeadEmail(name, email, phone, message);
@@ -108,25 +121,26 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3️⃣ Try matching FAQ (using keyword search)
-    const faqAnswer = FAQ.find((f) =>
+    // 2️⃣ FAQ Matching (keyword-based)
+    const faqMatch = FAQ.find((f) =>
       f.keywords.some((kw) => lower.includes(kw))
     );
 
-    if (faqAnswer) {
+    if (faqMatch) {
       return res.status(200).json({
-        reply: faqAnswer.answer,
+        reply: faqMatch.answer,
       });
     }
 
-    // 4️⃣ Schedule-related fallback
+    // 3️⃣ Schedule fallback
     if (lower.includes("schedule") || lower.includes("class")) {
       return res.status(200).json({
-        reply: `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\nWould you like to share your name, email, and phone so we can book you into a trial class?`,
+        reply:
+          `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\nWould you like to share your name, email, and phone so we can get you booked in?`,
       });
     }
 
-    // 5️⃣ Default friendly greeting fallback
+    // 4️⃣ Default fallback greeting
     const greetings = [
       "Hey 👋 welcome to A1 Performance Club! Can I grab your name, email, and phone to get you started?",
       "Hi there 🙌 we’d love to help you out! What’s your name, email, and phone so we can connect?",
