@@ -1,10 +1,74 @@
-// api/chat.js — A1 Chatbot with Memory + Lead Capture (no external APIs)
+// api/chat.js — A1 Chatbot with Memory + Lead Capture + Sheets + Email
 
+import { google } from "googleapis";
+import { Resend } from "resend";
 import A1_SCHEDULE from "./schedule.js";
 import FAQ from "./faq.js";
 
 // 🧠 In-memory sessions (per session_id)
 const sessions = {};
+
+// ✅ Google Sheets setup (safe)
+async function appendToSheet(values) {
+  try {
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT || !process.env.GOOGLE_SHEET_ID) {
+      console.warn("⚠️ GOOGLE_SERVICE_ACCOUNT or GOOGLE_SHEET_ID missing. Skipping sheet append.");
+      return;
+    }
+
+    const auth = new google.auth.GoogleAuth({
+      credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+
+    const sheets = google.sheets({ version: "v4", auth });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID,
+      range: "Sheet1!A:F",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [values] },
+    });
+
+    console.log("✅ Lead saved to Google Sheet:", values);
+  } catch (err) {
+    console.error("❌ Google Sheets error:", err);
+    // don't throw — we never want to crash the function
+  }
+}
+
+// ✅ Email setup (safe)
+async function sendLeadEmail(name, email, phone, message) {
+  try {
+    if (
+      !process.env.EMAIL_API_KEY ||
+      !process.env.EMAIL_FROM ||
+      !process.env.EMAIL_TO
+    ) {
+      console.warn("⚠️ Email env vars missing. Skipping email send.");
+      return;
+    }
+
+    const resend = new Resend(process.env.EMAIL_API_KEY);
+
+    await resend.emails.send({
+      from: process.env.EMAIL_FROM,
+      to: process.env.EMAIL_TO,
+      subject: "🔥 New Lead from A1 Chatbot",
+      html: `
+        <h2>New Lead Captured from A1 Chatbot</h2>
+        <p><b>Name:</b> ${name || "N/A"}</p>
+        <p><b>Email:</b> ${email || "N/A"}</p>
+        <p><b>Phone:</b> ${phone || "N/A"}</p>
+        <p><b>Message:</b> ${message || "N/A"}</p>
+      `,
+    });
+
+    console.log("✅ Lead email sent:", { name, email, phone });
+  } catch (err) {
+    console.error("❌ Email error:", err);
+    // don't throw
+  }
+}
 
 // Simple lead extractor using regex + phrases
 function extractLeadFromText(message) {
@@ -16,7 +80,7 @@ function extractLeadFromText(message) {
   );
   const email = emailMatch ? emailMatch[0] : null;
 
-  // Phone pattern (very loose, but good enough)
+  // Phone pattern (loose but practical)
   const phoneMatch = message.match(/(\+?\d[\d\s\-]{7,}\d)/);
   const phone = phoneMatch ? phoneMatch[0] : null;
 
@@ -39,7 +103,7 @@ function extractLeadFromText(message) {
 }
 
 export default async function handler(req, res) {
-  // 🔥 CORS (needed for Squarespace widget)
+  // 🌐 CORS (for Squarespace widget)
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -70,7 +134,7 @@ export default async function handler(req, res) {
     }
     const session = sessions[sessionId];
 
-    // Save message in history
+    // Save user message in history
     session.history.push({
       role: "user",
       content: message,
@@ -96,16 +160,30 @@ export default async function handler(req, res) {
       leadUpdated = true;
     }
 
-    // If we have enough lead info, confirm capture
+    // If we have enough lead info, confirm capture + send to Sheet + email
     if (leadUpdated && (session.lead.email || session.lead.phone)) {
       const name = session.lead.name || "there";
       const email = session.lead.email || "N/A";
       const phone = session.lead.phone || "N/A";
 
-      // (Later we can add Google Sheet or email send here again)
-      return res.status(200).json({
-        reply: `Thanks ${name}! I’ve saved your info: ${email}, ${phone}. We’ll reach out to help you get started 💪`,
-      });
+      // Save to Google Sheet
+      await appendToSheet([
+        new Date().toISOString(),
+        name,
+        email,
+        phone,
+        message,
+        sessionId,
+      ]);
+
+      // Send notification email
+      await sendLeadEmail(name, email, phone, message);
+
+      const reply = `Thanks ${name}! I’ve saved your info: ${email}, ${phone}. We’ll reach out to help you get started 💪`;
+
+      session.history.push({ role: "assistant", content: reply, ts: Date.now() });
+
+      return res.status(200).json({ reply });
     }
 
     // 2️⃣ FAQ keyword match
@@ -114,7 +192,6 @@ export default async function handler(req, res) {
     );
 
     if (faqMatch) {
-      // Save assistant reply to memory as well
       session.history.push({
         role: "assistant",
         content: faqMatch.answer,
@@ -156,7 +233,8 @@ export default async function handler(req, res) {
       "Hi there 🙌 I can help with pricing, schedules, and our 28-Day Transformation. You can also send your name, email, and phone and we’ll follow up.",
       "Welcome to A1 Performance Club 💪 Ask me anything about group training or personal training — or drop your name, email, and phone to get started.",
     ];
-    const reply = greetings[Math.floor(Math.random() * greetings.length)];
+    const reply =
+      greetings[Math.floor(Math.random() * greetings.length)];
 
     session.history.push({ role: "assistant", content: reply, ts: Date.now() });
 
