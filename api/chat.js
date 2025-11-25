@@ -1,4 +1,4 @@
-// api/chat.js — A1 Chatbot with Memory + Lead Capture + Google Sheets + Email
+// api/chat.js — A1 Chatbot with Memory + Smart Lead Capture + Google Sheets + Email
 
 import { google } from "googleapis";
 import { Resend } from "resend";
@@ -15,7 +15,9 @@ async function appendToSheet(values) {
     const sheetId = process.env.GOOGLE_SHEET_ID;
 
     if (!serviceAccountJson || !sheetId) {
-      console.warn("⚠️ GOOGLE_SERVICE_ACCOUNT or GOOGLE_SHEET_ID missing. Skipping appendToSheet.");
+      console.warn(
+        "⚠️ GOOGLE_SERVICE_ACCOUNT or GOOGLE_SHEET_ID missing. Skipping appendToSheet."
+      );
       return;
     }
 
@@ -38,7 +40,7 @@ async function appendToSheet(values) {
     console.log("✅ Lead saved to Google Sheet:", values);
   } catch (err) {
     console.error("❌ Google Sheets error:", err);
-    // do not throw — never crash the function because of Sheets
+    // never crash the function because of Sheets
   }
 }
 
@@ -50,7 +52,9 @@ async function sendLeadEmail(name, email, phone, message, sessionId) {
     const to = process.env.EMAIL_TO;
 
     if (!apiKey || !from || !to) {
-      console.warn("⚠️ EMAIL_API_KEY, EMAIL_FROM, or EMAIL_TO missing. Skipping sendLeadEmail.");
+      console.warn(
+        "⚠️ EMAIL_API_KEY, EMAIL_FROM, or EMAIL_TO missing. Skipping sendLeadEmail."
+      );
       return;
     }
 
@@ -73,25 +77,23 @@ async function sendLeadEmail(name, email, phone, message, sessionId) {
     console.log("✅ Lead email sent:", { name, email, phone });
   } catch (err) {
     console.error("❌ Email error:", err);
-    // don't throw — keep bot alive
+    // keep bot alive even if email fails
   }
 }
 
-// 🔎 Simple lead extractor (name / email / phone)
+// 🔎 Smart lead extractor (handles messy one-line inputs)
 function extractLeadFromText(message) {
-  const text = message.toLowerCase();
+  const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+  const phoneRegex = /(\+?\d[\d\s\-\(\)]{7,}\d)/;
 
-  // Email pattern
-  const emailMatch = message.match(
-    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
-  );
-  const email = emailMatch ? emailMatch[0] : null;
+  const emailMatch = message.match(emailRegex);
+  const phoneMatch = message.match(phoneRegex);
 
-  // Phone pattern (loose but practical)
-  const phoneMatch = message.match(/(\+?\d[\d\s\-]{7,}\d)/);
-  const phone = phoneMatch ? phoneMatch[0] : null;
+  const email = emailMatch ? emailMatch[0].trim() : null;
+  // strip spaces/dashes/brackets but keep leading +
+  const phone = phoneMatch ? phoneMatch[0].replace(/[^\d+]/g, "") : null;
 
-  // Name pattern: "my name is X", "i'm X", "i am X"
+  // 1) Try phrase-based name first ("my name is", "I'm", "I am")
   let name = null;
   const namePatterns = [
     /my name is\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)/i,
@@ -103,6 +105,30 @@ function extractLeadFromText(message) {
     if (m && m[1]) {
       name = m[1].trim();
       break;
+    }
+  }
+
+  // 2) If no name yet, infer from text before email / phone
+  if (!name) {
+    let before = "";
+
+    if (emailMatch) {
+      before = message.slice(0, emailMatch.index).trim();
+    } else if (phoneMatch) {
+      before = message.slice(0, phoneMatch.index).trim();
+    }
+
+    if (before) {
+      // collapse multiple spaces and remove commas/pipes
+      before = before.replace(/\s+/g, " ").replace(/[|,]/g, " ");
+      const parts = before
+        .split(" ")
+        .filter((w) => /^[A-Za-z]+$/.test(w)); // only letter words
+
+      if (parts.length >= 1) {
+        // take first 1–2 words as name (e.g. "Sarah McKay")
+        name = parts.slice(0, 2).join(" ");
+      }
     }
   }
 
@@ -227,7 +253,7 @@ export default async function handler(req, res) {
       lower.includes("phone")
     ) {
       const reply =
-        "No problem! You can share your details like this:\n\n\"My name is Sarah, my email is sarah@example.com, and my phone is 289-555-1234\"";
+        'No problem! You can share your details like this:\n\n"My name is Sarah, my email is sarah@example.com, and my phone is 289-555-1234"';
 
       session.history.push({ role: "assistant", content: reply, ts: Date.now() });
 
