@@ -1,4 +1,5 @@
-// api/chat.js — A1 Chatbot with Memory + Smart Lead Capture + Goals & Times + Google Sheets + Email + OpenAI Fallback
+// api/chat.js — A1 Chatbot (Upgraded)
+// Memory + Smart Lead Capture + Goals & Times + Google Sheets + Email + OpenAI Fallback
 
 import { google } from "googleapis";
 import { Resend } from "resend";
@@ -135,6 +136,15 @@ function extractLeadFromText(message) {
     }
   }
 
+  // Clean up common junk like "my"
+  if (name) {
+    name = name
+      .replace(/\b(my|email|is|name|phone)\b/gi, "")
+      .trim()
+      .replace(/\s+/g, " ");
+    if (!name) name = null;
+  }
+
   return { name, email, phone };
 }
 
@@ -188,7 +198,10 @@ async function generateOpenAIReply(session, userMessage) {
     // Build short history for context
     const recentHistory = (session.history || [])
       .slice(-6)
-      .map((h) => ({ role: h.role === "user" ? "user" : "assistant", content: h.content }));
+      .map((h) => ({
+        role: h.role === "user" ? "user" : "assistant",
+        content: h.content,
+      }));
 
     const lead = session.lead || {};
     const stage = session.stage || "unknown";
@@ -233,7 +246,7 @@ Lead so far:
     // Responses API output parsing
     let text = "";
 
-    if (data.output && Array.isArray(data.output) && data.output.length > 0) {
+    if (Array.isArray(data.output) && data.output.length > 0) {
       const first = data.output[0];
       if (first && Array.isArray(first.content)) {
         text = first.content
@@ -247,14 +260,24 @@ Lead so far:
     }
 
     if (!text) {
-      text = "Sorry, I wasn't able to generate a reply just now.";
+      // If we truly got nothing, let outer code fall back to canned message
+      return null;
     }
 
-    return text;
+    return text.trim();
   } catch (err) {
     console.error("❌ OpenAI fallback error:", err);
     return null;
   }
+}
+
+// Rough check for “looks like a time/day”
+// Used so we don't close the lead on questions like "what's the schedule?"
+function looksLikeTimeOrDay(str) {
+  const lower = str.toLowerCase();
+  const timePattern =
+    /\b(mon(day)?|tue(sday)?|wed(nesday)?|thu(rsday)?|fri(day)?|sat(urday)?|sun(day)?|\d{1,2}(:\d{2})?\s*(am|pm)?|morning|evening|afternoon|noon|night)\b/;
+  return timePattern.test(lower);
 }
 
 export default async function handler(req, res) {
@@ -336,7 +359,7 @@ export default async function handler(req, res) {
       } else if (t.startsWith("4") || t.includes("sport")) {
         goalText = "Sports performance";
       } else {
-        // fallback: just use their raw answer (capitalized first letter)
+        // fallback: just use their raw answer
         goalText = message.trim();
       }
 
@@ -367,7 +390,7 @@ export default async function handler(req, res) {
 
       const reply =
         `Sweet! Is there a specific day/time this week that works best? ` +
-        `For example: "Wed 7am" or "Sun 10am".`;
+        `For example: "Wed 7am" or "Sun 12pm".`;
 
       session.history.push({ role: "assistant", content: reply, ts: Date.now() });
       return res.status(200).json({ reply });
@@ -375,6 +398,15 @@ export default async function handler(req, res) {
 
     // 🔁 4) ALT TIME STAGE (FINALIZE LEAD)
     if (session.stage === "ask_alt_time") {
+      // If they ask a question instead of giving a time, keep stage and clarify
+      if (!looksLikeTimeOrDay(message)) {
+        const clarify =
+          `Totally get it! To lock you in, can you give me a specific day & time, like ` +
+          `"Wed 7am" or "Sun 12pm"?`;
+        session.history.push({ role: "assistant", content: clarify, ts: Date.now() });
+        return res.status(200).json({ reply: clarify });
+      }
+
       session.lead.altTime = message.trim();
       session.stage = "complete";
 
@@ -408,8 +440,17 @@ export default async function handler(req, res) {
     // - or stage is "complete" (lead already captured)
     // → normal FAQ + schedule behavior
 
-    // 5️⃣ FAQ keyword match
-    const faqMatch = FAQ.find((f) =>
+    // 5️⃣ FAQ keyword match (add stronger schedule hooks)
+    const augmentedFAQ = [
+      ...FAQ,
+      {
+        keywords: ["evening class", "evening classes", "night classes"],
+        answer:
+          "Yes, we run evening group classes on multiple weeknights at A1 Performance Club. Most people train after work — if you tell me which days you’re free, I can help you pick the best times.",
+      },
+    ];
+
+    const faqMatch = augmentedFAQ.find((f) =>
       f.keywords.some((kw) => lower.includes(kw))
     );
 
@@ -431,52 +472,3 @@ export default async function handler(req, res) {
         `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\n` +
         `If you’d like, you can also send your name, email, and phone and I’ll help you pick the best class.`;
 
-      session.history.push({ role: "assistant", content: reply, ts: Date.now() });
-
-      return res.status(200).json({ reply });
-    }
-
-    // 7️⃣ If they mention name/email/phone but we haven't captured yet, prompt format
-    if (
-      lower.includes("name") ||
-      lower.includes("email") ||
-      lower.includes("phone")
-    ) {
-      const reply =
-        'No problem! You can share your details like this:\n\n' +
-        '"Sarah McKay  sarah@gmail.com  289-555-1234"';
-
-      session.history.push({ role: "assistant", content: reply, ts: Date.now() });
-
-      return res.status(200).json({ reply });
-    }
-
-    // 8️⃣ OpenAI fallback — natural conversation
-    const aiReply = await generateOpenAIReply(session, message);
-
-    if (aiReply) {
-      session.history.push({
-        role: "assistant",
-        content: aiReply,
-        ts: Date.now(),
-      });
-      return res.status(200).json({ reply: aiReply });
-    }
-
-    // 9️⃣ Final fallback: canned greeting (in case OpenAI fails)
-    const greetings = [
-      "Hey 👋 welcome to A1 Performance Club! Ask me about memberships, classes, or the 28-Day Transformation — or drop your name, email, and phone and I’ll help you get started.",
-      "Hi there 🙌 I can help with pricing, schedules, and our 28-Day Transformation. You can also send your name, email, and phone to get booked in.",
-      "Welcome to A1 Performance Club 💪 Ask me anything about group training or personal training — or send your name, email, and phone and I’ll help you pick the best option.",
-    ];
-    const reply =
-      greetings[Math.floor(Math.random() * greetings.length)];
-
-    session.history.push({ role: "assistant", content: reply, ts: Date.now() });
-
-    return res.status(200).json({ reply });
-  } catch (err) {
-    console.error("❌ Chat handler error (outer catch):", err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-}
