@@ -1,4 +1,4 @@
-// api/chat.js — A1 Chatbot with Memory + Smart Lead Capture + Google Sheets + Email
+// api/chat.js — A1 Chatbot with Memory + Smart Lead Capture + Goals & Times + Google Sheets + Email
 
 import { google } from "googleapis";
 import { Resend } from "resend";
@@ -32,7 +32,7 @@ async function appendToSheet(values) {
 
     await sheets.spreadsheets.values.append({
       spreadsheetId: sheetId,
-      range: "Sheet1!A:F",
+      range: "Sheet1!A:H", // Timestamp, Name, Email, Phone, Goal, Preferred Time, Alt Time, Status
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [values] },
     });
@@ -45,7 +45,7 @@ async function appendToSheet(values) {
 }
 
 // ✅ Email helper (Resend)
-async function sendLeadEmail(name, email, phone, message, sessionId) {
+async function sendLeadEmail(lead, sessionId) {
   try {
     const apiKey = process.env.EMAIL_API_KEY;
     const from = process.env.EMAIL_FROM;
@@ -59,6 +59,7 @@ async function sendLeadEmail(name, email, phone, message, sessionId) {
     }
 
     const resend = new Resend(apiKey);
+    const { name, email, phone, goal, preferredTime, altTime } = lead;
 
     await resend.emails.send({
       from,
@@ -69,7 +70,9 @@ async function sendLeadEmail(name, email, phone, message, sessionId) {
         <p><b>Name:</b> ${name || "N/A"}</p>
         <p><b>Email:</b> ${email || "N/A"}</p>
         <p><b>Phone:</b> ${phone || "N/A"}</p>
-        <p><b>Last Message:</b> ${message || "N/A"}</p>
+        <p><b>Goal:</b> ${goal || "N/A"}</p>
+        <p><b>Preferred Time:</b> ${preferredTime || "N/A"}</p>
+        <p><b>Alt Time:</b> ${altTime || "N/A"}</p>
         <p><b>Session ID:</b> ${sessionId || "N/A"}</p>
       `,
     });
@@ -135,6 +138,25 @@ function extractLeadFromText(message) {
   return { name, email, phone };
 }
 
+// 🧠 Helper: initialize session
+function getOrCreateSession(sessionId) {
+  if (!sessions[sessionId]) {
+    sessions[sessionId] = {
+      history: [],
+      stage: "collect_contact", // collect_contact → ask_goal → ask_preferred_time → ask_alt_time → complete
+      lead: {
+        name: null,
+        email: null,
+        phone: null,
+        goal: null,
+        preferredTime: null,
+        altTime: null,
+      },
+    };
+  }
+  return sessions[sessionId];
+}
+
 export default async function handler(req, res) {
   // 🌐 CORS (for Squarespace widget)
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -158,14 +180,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 🧠 Get or create session
-    if (!sessions[sessionId]) {
-      sessions[sessionId] = {
-        history: [],
-        lead: { name: null, email: null, phone: null },
-      };
-    }
-    const session = sessions[sessionId];
+    const session = getOrCreateSession(sessionId);
 
     // Save user message in history
     session.history.push({
@@ -176,50 +191,124 @@ export default async function handler(req, res) {
 
     const lower = message.toLowerCase();
 
-    // 1️⃣ Try to extract / update lead info from this message
-    const found = extractLeadFromText(message);
-    let leadUpdated = false;
+    // 🔁 1) CONTACT COLLECTION STAGE
+    if (session.stage === "collect_contact") {
+      const found = extractLeadFromText(message);
+      let leadUpdated = false;
 
-    if (found.name && !session.lead.name) {
-      session.lead.name = found.name;
-      leadUpdated = true;
+      if (found.name && !session.lead.name) {
+        session.lead.name = found.name;
+        leadUpdated = true;
+      }
+      if (found.email && !session.lead.email) {
+        session.lead.email = found.email;
+        leadUpdated = true;
+      }
+      if (found.phone && !session.lead.phone) {
+        session.lead.phone = found.phone;
+        leadUpdated = true;
+      }
+
+      if (leadUpdated && (session.lead.email || session.lead.phone)) {
+        // We have enough contact info → move to goals
+        session.stage = "ask_goal";
+        const nameForPrompt = session.lead.name || "there";
+        const reply =
+          `Thanks ${nameForPrompt}! Before we book you in, what’s your main goal right now?\n\n` +
+          `1️⃣ Lose weight\n2️⃣ Build strength\n3️⃣ Improve energy & fitness\n4️⃣ Sports performance`;
+
+        session.history.push({ role: "assistant", content: reply, ts: Date.now() });
+        return res.status(200).json({ reply });
+      }
     }
-    if (found.email && !session.lead.email) {
-      session.lead.email = found.email;
-      leadUpdated = true;
-    }
-    if (found.phone && !session.lead.phone) {
-      session.lead.phone = found.phone;
-      leadUpdated = true;
-    }
 
-    // If we have enough lead info, confirm capture + send to Google Sheets + email
-    if (leadUpdated && (session.lead.email || session.lead.phone)) {
-      const name = session.lead.name || "there";
-      const email = session.lead.email || "N/A";
-      const phone = session.lead.phone || "N/A";
+    // 🔁 2) GOAL STAGE
+    if (session.stage === "ask_goal") {
+      let goalText;
+      const t = lower.trim();
 
-      // Save to Google Sheet
-      await appendToSheet([
-        new Date().toISOString(),
-        name,
-        email,
-        phone,
-        message,
-        sessionId,
-      ]);
+      if (t.startsWith("1") || t.includes("lose")) {
+        goalText = "Lose weight";
+      } else if (t.startsWith("2") || t.includes("strength")) {
+        goalText = "Build strength";
+      } else if (t.startsWith("3") || t.includes("energy") || t.includes("fitness")) {
+        goalText = "Improve energy & fitness";
+      } else if (t.startsWith("4") || t.includes("sport")) {
+        goalText = "Sports performance";
+      } else {
+        // fallback: just use their raw answer (capitalized first letter)
+        goalText = message.trim();
+      }
 
-      // Send notification email
-      await sendLeadEmail(name, email, phone, message, sessionId);
+      session.lead.goal = goalText;
+      session.stage = "ask_preferred_time";
 
-      const reply = `Thanks ${name}! I’ve saved your info: ${email}, ${phone}. We’ll reach out to help you get started 💪`;
+      const reply =
+        `Awesome — ${goalText} 💪\n\n` +
+        `What time of day usually works best for you: mornings, evenings, or weekends?`;
 
       session.history.push({ role: "assistant", content: reply, ts: Date.now() });
-
       return res.status(200).json({ reply });
     }
 
-    // 2️⃣ FAQ keyword match
+    // 🔁 3) PREFERRED TIME STAGE
+    if (session.stage === "ask_preferred_time") {
+      let pref = "Anytime";
+      if (lower.includes("morn")) pref = "Morning";
+      else if (lower.includes("even")) pref = "Evening";
+      else if (lower.includes("weekend") || lower.includes("sat") || lower.includes("sun")) {
+        pref = "Weekend";
+      } else {
+        pref = message.trim();
+      }
+
+      session.lead.preferredTime = pref;
+      session.stage = "ask_alt_time";
+
+      const reply =
+        `Sweet! Is there a specific day/time this week that works best? ` +
+        `For example: "Wed 7am" or "Sun 10am".`;
+
+      session.history.push({ role: "assistant", content: reply, ts: Date.now() });
+      return res.status(200).json({ reply });
+    }
+
+    // 🔁 4) ALT TIME STAGE (FINALIZE LEAD)
+    if (session.stage === "ask_alt_time") {
+      session.lead.altTime = message.trim();
+      session.stage = "complete";
+
+      const { name, email, phone, goal, preferredTime, altTime } = session.lead;
+      const safeName = name || "there";
+
+      // Write full lead row to Google Sheets
+      await appendToSheet([
+        new Date().toISOString(),
+        name || "",
+        email || "",
+        phone || "",
+        goal || "",
+        preferredTime || "",
+        altTime || "",
+        "New Lead",
+      ]);
+
+      // Send email notification
+      await sendLeadEmail(session.lead, sessionId);
+
+      const reply =
+        `Amazing, you’re all set ${safeName}! I’ll follow up to confirm your spot and next steps 💪`;
+
+      session.history.push({ role: "assistant", content: reply, ts: Date.now() });
+      return res.status(200).json({ reply });
+    }
+
+    // 🔁 From here on, either:
+    // - stage is still "collect_contact" but no contact yet
+    // - or stage is "complete" (lead already captured)
+    // → normal FAQ + schedule behavior
+
+    // 5️⃣ FAQ keyword match
     const faqMatch = FAQ.find((f) =>
       f.keywords.some((kw) => lower.includes(kw))
     );
@@ -236,35 +325,37 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3️⃣ Schedule-related fallback
+    // 6️⃣ Schedule-related fallback
     if (lower.includes("schedule") || lower.includes("class")) {
       const reply =
-        `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\nWould you like to share your name, email, and phone so we can get you booked in?`;
+        `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\n` +
+        `If you’d like, you can also send your name, email, and phone and I’ll help you pick the best class.`;
 
       session.history.push({ role: "assistant", content: reply, ts: Date.now() });
 
       return res.status(200).json({ reply });
     }
 
-    // 4️⃣ If they mention name/email/phone but not enough to save yet, prompt for rest
+    // 7️⃣ If they mention name/email/phone but we haven't captured yet, prompt format
     if (
       lower.includes("name") ||
       lower.includes("email") ||
       lower.includes("phone")
     ) {
       const reply =
-        'No problem! You can share your details like this:\n\n"My name is Sarah, my email is sarah@example.com, and my phone is 289-555-1234"';
+        'No problem! You can share your details like this:\n\n' +
+        '"Sarah McKay  sarah@gmail.com  289-555-1234"';
 
       session.history.push({ role: "assistant", content: reply, ts: Date.now() });
 
       return res.status(200).json({ reply });
     }
 
-    // 5️⃣ Default friendly greeting
+    // 8️⃣ Default friendly greeting
     const greetings = [
-      "Hey 👋 welcome to A1 Performance Club! Ask me about memberships, classes, or the 28-Day Transformation — or share your name, email, and phone so we can help you get started.",
-      "Hi there 🙌 I can help with pricing, schedules, and our 28-Day Transformation. You can also send your name, email, and phone and we’ll follow up.",
-      "Welcome to A1 Performance Club 💪 Ask me anything about group training or personal training — or drop your name, email, and phone to get started.",
+      "Hey 👋 welcome to A1 Performance Club! Ask me about memberships, classes, or the 28-Day Transformation — or drop your name, email, and phone and I’ll help you get started.",
+      "Hi there 🙌 I can help with pricing, schedules, and our 28-Day Transformation. You can also send your name, email, and phone to get booked in.",
+      "Welcome to A1 Performance Club 💪 Ask me anything about group training or personal training — or send your name, email, and phone and I’ll help you pick the best option.",
     ];
     const reply =
       greetings[Math.floor(Math.random() * greetings.length)];
