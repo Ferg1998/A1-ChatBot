@@ -1,4 +1,4 @@
-// api/chat.js — A1 Chatbot with Memory + Smart Lead Capture + Goals & Times + Google Sheets + Email
+// api/chat.js — A1 Chatbot with Memory + Smart Lead Capture + Goals & Times + Google Sheets + Email + OpenAI Fallback
 
 import { google } from "googleapis";
 import { Resend } from "resend";
@@ -155,6 +155,106 @@ function getOrCreateSession(sessionId) {
     };
   }
   return sessions[sessionId];
+}
+
+// 🤖 OpenAI fallback helper
+const A1_SYSTEM_PROMPT = `
+You are the friendly front-desk chatbot for A1 Performance Club, a small-group personal training gym in Hamilton, Ontario.
+
+Your job:
+- Greet visitors warmly and make them feel welcome.
+- Help them understand what A1 does (small-group training, personal training, 28-Day Transformation, athlete development).
+- Ask good questions to learn about their goals, training history, injuries, and schedule.
+- Encourage them to share their name, email, and phone so a coach can follow up.
+- Ask what time of day they prefer to train (mornings, evenings, or weekends) when relevant.
+- Always keep answers short, clear, and conversational.
+
+Tone:
+- Friendly, human, and down-to-earth.
+- No corporate speak.
+- Use emojis lightly (1–2 per message max).
+
+If the person is clearly just asking a factual question (e.g., "What is the 28-Day Transformation?"), answer that question clearly, then gently mention that they can share their name, email, and phone to get started if they want.
+`.trim();
+
+async function generateOpenAIReply(session, userMessage) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn("⚠️ Missing OPENAI_API_KEY, skipping OpenAI fallback.");
+    return null;
+  }
+
+  try {
+    // Build short history for context
+    const recentHistory = (session.history || [])
+      .slice(-6)
+      .map((h) => ({ role: h.role === "user" ? "user" : "assistant", content: h.content }));
+
+    const lead = session.lead || {};
+    const stage = session.stage || "unknown";
+
+    const contextSummary = `
+Current stage: ${stage}
+Lead so far:
+- Name: ${lead.name || "unknown"}
+- Email: ${lead.email || "unknown"}
+- Phone: ${lead.phone || "unknown"}
+- Goal: ${lead.goal || "unknown"}
+- Preferred time: ${lead.preferredTime || "unknown"}
+- Alt time: ${lead.altTime || "unknown"}
+`.trim();
+
+    const input = [
+      { role: "system", content: A1_SYSTEM_PROMPT },
+      { role: "system", content: contextSummary },
+      ...recentHistory,
+      { role: "user", content: userMessage },
+    ];
+
+    const resp = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        input,
+      }),
+    });
+
+    const data = await resp.json();
+
+    if (!resp.ok) {
+      console.error("❌ OpenAI error:", data);
+      return null;
+    }
+
+    // Responses API output parsing
+    let text = "";
+
+    if (data.output && Array.isArray(data.output) && data.output.length > 0) {
+      const first = data.output[0];
+      if (first && Array.isArray(first.content)) {
+        text = first.content
+          .map((part) => (part?.text?.value ?? ""))
+          .join("");
+      }
+    }
+
+    if (!text && typeof data.output_text === "string") {
+      text = data.output_text;
+    }
+
+    if (!text) {
+      text = "Sorry, I wasn't able to generate a reply just now.";
+    }
+
+    return text;
+  } catch (err) {
+    console.error("❌ OpenAI fallback error:", err);
+    return null;
+  }
 }
 
 export default async function handler(req, res) {
@@ -351,7 +451,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ reply });
     }
 
-    // 8️⃣ Default friendly greeting
+    // 8️⃣ OpenAI fallback — natural conversation
+    const aiReply = await generateOpenAIReply(session, message);
+
+    if (aiReply) {
+      session.history.push({
+        role: "assistant",
+        content: aiReply,
+        ts: Date.now(),
+      });
+      return res.status(200).json({ reply: aiReply });
+    }
+
+    // 9️⃣ Final fallback: canned greeting (in case OpenAI fails)
     const greetings = [
       "Hey 👋 welcome to A1 Performance Club! Ask me about memberships, classes, or the 28-Day Transformation — or drop your name, email, and phone and I’ll help you get started.",
       "Hi there 🙌 I can help with pricing, schedules, and our 28-Day Transformation. You can also send your name, email, and phone to get booked in.",
