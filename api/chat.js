@@ -260,7 +260,6 @@ Lead so far:
     }
 
     if (!text) {
-      // If we truly got nothing, let outer code fall back to canned message
       return null;
     }
 
@@ -472,3 +471,52 @@ export default async function handler(req, res) {
         `Here’s our schedule 📅:\n\n${A1_SCHEDULE}\n\n` +
         `If you’d like, you can also send your name, email, and phone and I’ll help you pick the best class.`;
 
+      session.history.push({ role: "assistant", content: reply, ts: Date.now() });
+
+      return res.status(200).json({ reply });
+    }
+
+    // 7️⃣ If they mention name/email/phone but we haven't captured yet, prompt format
+    if (
+      lower.includes("name") ||
+      lower.includes("email") ||
+      lower.includes("phone")
+    ) {
+      const reply =
+        'No problem! You can share your details like this:\n\n' +
+        '"Sarah McKay  sarah@gmail.com  289-555-1234"';
+
+      session.history.push({ role: "assistant", content: reply, ts: Date.now() });
+
+      return res.status(200).json({ reply });
+    }
+
+    // 8️⃣ OpenAI fallback — natural conversation
+    const aiReply = await generateOpenAIReply(session, message);
+
+    if (aiReply) {
+      session.history.push({
+        role: "assistant",
+        content: aiReply,
+        ts: Date.now(),
+      });
+      return res.status(200).json({ reply: aiReply });
+    }
+
+    // 9️⃣ Final fallback: canned greeting (in case OpenAI fails)
+    const greetings = [
+      "Hey 👋 welcome to A1 Performance Club! Ask me about memberships, classes, or the 28-Day Transformation — or drop your name, email, and phone and I’ll help you get started.",
+      "Hi there 🙌 I can help with pricing, schedules, and our 28-Day Transformation. You can also send your name, email, and phone to get booked in.",
+      "Welcome to A1 Performance Club 💪 Ask me anything about group training or personal training — or send your name, email, and phone and I’ll help you pick the best option.",
+    ];
+    const reply =
+      greetings[Math.floor(Math.random() * greetings.length)];
+
+    session.history.push({ role: "assistant", content: reply, ts: Date.now() });
+
+    return res.status(200).json({ reply });
+  } catch (err) {
+    console.error("❌ Chat handler error (outer catch):", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+}
